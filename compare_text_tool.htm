@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+<meta charset="utf-8">
+<title>テキストデータ比較ツール</title>
+<meta name="description" content="2つのテキストデータを比較して変更箇所を見やすく表示するツールです。">
+<meta name="viewport" content="width=device-width">
+
+<!-- JavaScriptで操作するCSS -->
+<style type="text/css" id="delCSS">
+    .del_txt{
+        display: inline;
+        color: red;
+        background-color: #fef263;
+        font-weight: bold;
+        text-decoration: line-through;
+    }
+</style>
+<style type="text/css" id="insCSS">
+    .ins_txt{
+        display: inline;
+        color: blue;
+        background-color: #7fffd4;
+        font-weight: bold;
+        text-decoration: underline;
+    }
+</style>
+
+<style type="text/css">
+    /* 2つのクラス名がある場合に適用 */
+    .del_txt.none{
+        display: inline;
+        color: black;
+        background-color: white;
+        font-weight: normal;
+        text-decoration: none;
+    }
+    .ins_txt.none{
+        display: none;
+    }
+
+    /* 背景の模様 */
+    body{
+        background-image: linear-gradient(135deg, transparent 18.75%, #f5dc9e 0 31.25%, transparent 0),
+                          repeating-linear-gradient(45deg, #f5dc9e -6.25% 6.25%, #ecebf4 0 18.75%);
+        background-size: 25px 25px;
+        background-color: #ecebf4;
+    }
+
+    h1 {
+        background-color: #fef4f4;
+        padding: 1rem 2rem;
+        border-top: 6px double #000;
+        border-bottom: 6px double #000;
+    }
+
+    /* 外枠の線の設定 */
+    #config, .flex-container{
+        background-color: white;
+        border: 4px solid rgb(86, 163, 100);
+    }
+
+    #inputTable{
+        background-color: #e6e6fa;
+        margin-left: auto;
+        margin-right: auto;
+        border:6px solid #793e3e;
+        border-radius: 15px;
+        overflow: hidden;
+        tr:nth-child(3) td{ 
+            background-color: #fff8dc;
+            border: 1px solid gray;
+            padding: 1px 20px;
+        }
+        table tr{
+            td{
+                background-color: white;
+                overflow: hidden;
+                border: 3px solid #5a685a;
+                border-radius: 5px;
+                padding: 5px 10px;
+                vertical-align: top;
+                details summary{ background-color: #bce2e8; }
+            }
+            td:nth-of-type(1){
+                vertical-align: middle;
+                text-align: center;
+            }
+        }
+    }
+
+    #config{
+        padding: 10px 20px;
+        border-radius: 15px;
+        overflow: hidden;
+        details summary{ background-color: rgba(191, 231, 166, 0.86); }
+    }
+
+    /* 書式設定テーブル */
+    #styleChange{
+        border-collapse: separate;
+        border-spacing: 3px 7px;
+        background-color: #a2d7dd;
+        border: 2px solid black;
+        border-radius: 7px;
+        overflow: hidden;
+        tr{
+            td{
+                border: 1px solid black;
+                padding: 2px 10px;
+                background-color: white;
+                border-radius: 7px;
+                overflow: hidden;           
+            }
+            td:nth-of-type(1){
+                background-color: #1e50a2;
+                color: white;
+            }
+        }
+    }
+
+    summary{ cursor: pointer; } /* マウスカーソルをポインターに */
+
+    #allCheckBox{ text-align: right; }
+
+    /* 出力結果と変更箇所のtable横並び */
+    .flex-container{ display: flex; }
+
+    /* 出力結果tableのスクロール設定 */
+    .scrolltable1{
+        height: 700px;
+        width: 60%;
+        overflow-y: auto;
+        table thead{
+            position:sticky;
+			top:0;
+            background:#a3d1ff;
+        }
+    }
+
+    /* 変更箇所tableのスクロール設定 */
+    .scrolltable2{
+        height: 700px;
+        width: 40%;
+        overflow-y: auto;
+        table thead{
+            position:sticky;
+			top:0;
+            background:#a3d1ff;
+        }
+    }
+
+    /* 「No.」「採用」列の中央揃え */
+    #list tr{
+        td:nth-of-type(1){ text-align: center; }
+        td:nth-of-type(4){ text-align: center; }
+    }
+
+    /* 削除・挿入欄のデザイン */
+    #list tr td:nth-of-type(2){ 
+        padding: 5px 10px; /* セル内余白 */
+        background-color: #fffacd;
+        border: 2px solid #5a685a;
+        border-radius: 5px;
+        overflow: hidden;
+        cursor: pointer; /* マウスカーソルをポインターに */
+    }
+    #list tr td:nth-of-type(2):hover{
+        background-color: #00ff7f; /* マウスオーバー時の背景色 */
+    }
+    #list tr td:nth-of-type(3){
+        padding: 5px 10px; /* セル内余白 */
+        background-color: #fffacd;
+        border: 2px solid #5a685a;
+        border-radius: 5px;
+        overflow: hidden;
+        cursor: pointer; /* マウスカーソルをポインターに */
+    }
+    #list tr td:nth-of-type(3):hover{
+        background-color: #00ff7f; /* マウスオーバー時の背景色 */
+    }
+    .no-hover{ pointer-events: none; } /* hoverを無視するセル */
+</style>
+
+<script type="text/javascript">
+
+//採用チェックボックスの一括処理
+function checkAll(){
+    const checklist = document.getElementsByClassName("agree");
+    const checkLen = checklist.length;
+
+    if(checkLen){
+        const dellist = document.getElementsByClassName('del_txt');
+        const inslist = document.getElementsByClassName('ins_txt');
+        const flag = document.getElementById("all").checked;
+        
+        if(flag){
+            for(let i = 0; i < checkLen; i++){
+                checklist[i].checked = flag;
+                dellist[i].classList.remove("none");
+                inslist[i].classList.remove("none");
+            }
+        }else{
+            for(let i = 0; i < checkLen; i++){
+                checklist[i].checked = flag;
+                dellist[i].classList.add("none");
+                inslist[i].classList.add("none");
+            }
+        }
+    }    
+}
+
+//採用チェックボックスの個別処理
+function switching(elem){
+    const cell = elem.parentElement;
+    const n = cell.parentElement.rowIndex - 1;
+    const dellist = document.getElementsByClassName('del_txt');
+    const inslist = document.getElementsByClassName('ins_txt');
+
+    if(elem.checked){
+        dellist[n].classList.remove("none");
+        inslist[n].classList.remove("none");
+    }else{
+        dellist[n].classList.add("none");
+        inslist[n].classList.add("none");
+    }
+}
+
+//テキストエリアの文字数を表示
+function txtlen(elem){
+    document.getElementById(elem.name).textContent = elem.value.length;
+}
+
+//比較の結果、文字列が変更されている箇所の設定を切り替える関数
+function spanConfig(elem){
+    //設定情報の読込
+    let row;
+    if(elem.className == "set"){
+        row = elem.parentElement.parentElement.parentElement.parentElement;
+    }else{
+        row = elem.parentElement.parentElement.parentElement;
+    }
+    const boldflag = row.cells[3].getElementsByTagName("input")[0].checked;     //太字
+    const eraseflag = row.cells[4].getElementsByTagName("input")[0].checked;    //取消線
+    const underflag = row.cells[5].getElementsByTagName("input")[0].checked;    //下線
+    const displayflag = row.cells[6].getElementsByTagName("input")[0].checked;  //表示
+    let fontColor, backColor;
+    let target, flag, str, deco;
+
+    //色の設定読込
+    if(row.cells[1].getElementsByClassName("reset")[0].checked){
+        fontColor = "black";
+    }else{
+        fontColor = row.cells[1].getElementsByClassName("set")[0].value;    //選択した文字色
+    }
+    if(row.cells[2].getElementsByClassName("reset")[0].checked){
+        backColor = "";
+    }else{
+        backColor = row.cells[2].getElementsByClassName("set")[0].value;    //選択した背景色
+    }
+
+    flag = eraseflag ? 1 : 0;
+    flag += underflag ? 2 : 0;
+    switch(flag){
+        case 0: deco = "none";          //線なし
+            break;
+        case 1: deco = "line-through";  //取消線
+            break;
+        case 2: deco = "underline";     //下線
+            break;        
+        case 3: deco = "underline line-through";    //下線 + 取消線
+    }
+
+    //CSSの設定情報を文字列で作成
+    str = `
+        display: ${(displayflag?"inline":"none")};
+        color: ${fontColor};
+        background-color: ${backColor};
+        font-weight: ${(boldflag?"bold":"normal")};
+        text-decoration: ${deco};
+    `;
+
+    //操作対象の判定
+    switch(row.rowIndex){
+        case 0: target = document.getElementById("delCSS");
+                target.textContent = ".del_txt{" + str + "}";
+                break;
+        case 1: target = document.getElementById("insCSS");
+                target.textContent = ".ins_txt{" + str + "}";
+    }
+}
+
+//変更箇所リストをクリックすると本文の該当箇所を表示
+function spanSelect(elem){
+    //中身が空なら終了
+    if(elem.innerText == ""){ return; }
+
+    //td要素から行番号と列番号を取得
+    const r = elem.parentElement.rowIndex - 1;
+    const c = elem.cellIndex;
+    let list;
+
+    if(c == 1){         //「削除」の列
+        list = document.getElementsByClassName('del_txt');
+    }else if(c == 2){   //「挿入」の列
+        list = document.getElementsByClassName('ins_txt');
+    }
+    //対応するspanタグをスクロールして表示
+    list[r].scrollIntoView({ behavior: "smooth", block: "center" });
+
+    //該当箇所を選択
+    let rng = new Range;
+    rng.selectNodeContents(list[r]);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(rng);
+}
+
+//元の配列dataの要素番号を記録した配列idxの値をクイックソート
+function quickSort(data, idx, lower, upper){
+    //間隔が狭くなったら再帰を中断し、後でまとめて挿入ソートする。
+    if(upper - lower < 20){ return; }
+
+    let i, j, tmp;
+    let pivot;
+
+    pivot = data[idx[(lower + upper) >> 1]];
+    i = lower;
+    j = upper;
+
+    while(1){
+        while(data[idx[i]] < pivot){ i++; }
+        while(data[idx[j]] > pivot){ j--; }
+        if(i >= j){ break; }
+        tmp = idx[i];
+        idx[i] = idx[j];
+        idx[j] = tmp;
+
+        i++; j--;
+    }
+
+    if(lower < i - 1){ quickSort(data, idx, lower, i - 1); }
+    if(upper > j + 1){ quickSort(data, idx, j + 1, upper); }
+}
+
+//元の配列dataの要素番号を記録した配列idxの値を挿入ソート
+function insSort(data, idx){
+    const d_len = data.length;
+    let i, j, tmp, str;
+
+    for(i = 1; i < d_len; i++){
+        tmp = idx[i];
+        str = data[tmp];
+        for(j = i - 1; j >= 0; j--){
+            if(data[idx[j]] > str){
+                idx[j + 1] = idx[j];
+            }else{
+                break;
+            }
+        }
+        idx[j + 1] = tmp;
+    }
+}
+
+//配列dataの要素番号の位置をソート済のidxを使って二分探索
+function binarySearch(data, idx, str, lower, upper){
+    let i = lower;
+    let j = upper;
+    let mid;
+
+    while(i <= j){
+        mid = (i + j) >> 1;
+        if(data[idx[mid]] < str){
+            i = mid + 1;
+        }else{
+            j = mid - 1;
+        }
+    }
+    return i;
+}
+
+//ソート済配列を使って目的の文字の置換を高速に行う関数
+function escConv(data, idx){
+    //特殊文字に対応するhtml用のコード
+    const dic = { "<": "&lt;", ">": "&gt;", "\"": "&quot;", "\'": "&#39;", "\`": "&#96;",
+                  "&": "&amp;", " ": "&nbsp;", "\n": "<br>", "\t": "&#9;", "\\": "&yen;",
+                  "+": "&plus;", "-": "&minus;", "=": "&equals;" };
+
+    const d_len = data.length;
+    const limit = d_len - 1;
+    let pos = [];
+    let i, j, key, tmp;
+
+    //特殊文字のキーとその文字の開始位置を二分探索で取得して配列posに格納
+    for(key in dic){
+        pos.push([key, binarySearch(data, idx, key, 0, limit)]);
+    }
+
+    //特殊文字がある場所だけにアクセスして置換
+    for(i = 0; i < pos.length; i++){
+        tmp = pos[i][0];
+        for(j = pos[i][1]; idx[j] < d_len; j++){
+            if(data[idx[j]] === tmp){
+                data[idx[j]] = dic[tmp];
+            }else{
+                break;
+            }
+        }
+    }
+}
+
+//「テキスト比較」ボタンで呼び出されるメインの関数
+function txtCheck(){
+/*
+　　【プログラム概要】
+    「変更前」欄の文字列を配列oldStr、「変更後」欄の文字列を配列newStrへ1文字ずつ分割して格納。
+    oldStr内の各文字を横方向の項目名、newStr内の各文字を縦方向の項目名として配置した表をイメージ。
+    それぞれの項目の交点で、文字が一致すれば1、不一致なら0と記録された表を二次元配列で作成する。
+    これにより、左上から右下へ向かって斜めに1が連続した箇所が、oldStrとnewStrで文字列が一致した
+    箇所と判定できるようになる。
+    なお、この表はメモリ節約のため各要素を1ビットで作成し、以後は文字列比較せずにビット操作で探索。
+
+    単純に先頭から探索しても最適な挿入・削除箇所の特定ができない場合があるので、以下の表ではまず
+    最長一致箇所となる「いうえ」を特定し、その前後(左上と右下)の矩形範囲で再帰的に最長一致箇所を
+    探索していく。結果的に一致箇所が存在しない区間を、削除文字列や挿入文字列として判定。
+
+    (表のイメージ)
+        あ  え  い  う  え  お  あ  お  か  け
+    あ  1   0   0   0   0   0   1   0   0   0
+    い  0   0   1   0   0   0   0   0   0   0
+    う  0   0   0   1   0   0   0   0   0   0
+    え  0   1   0   0   1   0   0   0   0   0
+    か  0   0   0   0   0   0   0   0   1   0
+    お  0   0   0   0   0   1   0   1   0   0
+
+    txtMix関数で再帰的に探索を行い、この表から最終的に以下のような文字列を生成する。
+    あ《-え-》《==》いうえ《-おあ-》《=か=》お《-かけ-》《==》
+
+    《--》は削除文字列、《==》は挿入文字列とし、正規表現で対応するspanタグと置き換える。
+    spanタグで削除文字列のクラスと挿入文字列のクラスを区別し、まとめて書式の切り替えを可能にする。
+    また、削除だけ、挿入だけの場合でも中身が空の《--》《==》をセットで配置することで、後で修正箇所
+    の対応表を作成しやすくする。
+*/
+
+    let t = Array(5);   //実行時間計測用配列
+    t[0] = performance.now();
+
+    const txt1 = document.getElementById('text1');
+    const txt2 = document.getElementById('text2');
+
+    if (txt1.value == "" || txt2.value == ""){
+        window.alert("変更前後の文字列を入力してください。");
+        return;
+    } 
+
+    //サロゲートペアの文字コード対策のため、スプレッド構文を使って1文字ずつ配列に格納
+    //(例えば、「吉」と似ている𠮷野家の「𠮷」の文字はsplit("")だと勝手に2文字分に千切られる)
+    let oldStr = [...txt1.value];
+    let newStr = [...txt2.value];
+    
+    t[1] = performance.now();
+
+    let matrix = Array(newStr.length);      //ビットフラグ格納用の配列
+    flagGenerate(matrix, oldStr, newStr);   //文字列探索用のビットフラグ生成
+
+    t[2] = performance.now();
+
+    //文字列の最大連続一致箇所を再帰的に探索し、余ったoldStrの部分文字列を「削除」、
+    //余ったnewStrの部分文字列を「挿入」として区切り文字を入れて区別する関数。
+    //関数呼び出しの戻り値は使わず、文字列操作の結果は配列oldStrの中の値に反映させる。
+    txtMix(matrix, oldStr, 0, oldStr.length-1, newStr, 0, newStr.length-1, 0);
+
+    //サイズの大きい配列のメモリを解放
+    matrix = null;
+    newStr = null;
+
+    let mixStr = oldStr.join("");   //配列全体にjoinを使って文字列結合時のメモリ確保を効率化
+    oldStr = null;
+    t[3] = performance.now();
+
+    //HTML出力用に本文にsapnタグを入れ、変更箇所リストを表形式にして出力
+    htmlConv(mixStr);
+
+    t[4] = performance.now();
+    document.getElementById('time').textContent = (t[4] - t[0]).toFixed(1);
+    document.getElementById('t1').textContent = (t[1] - t[0]).toFixed(1);
+    document.getElementById('t2').textContent = (t[2] - t[1]).toFixed(1);
+    document.getElementById('t3').textContent = (t[3] - t[2]).toFixed(1);
+    document.getElementById('t4').textContent = (t[4] - t[3]).toFixed(1);
+}
+
+function flagGenerate(matrix, oldStr, newStr){
+    const BUF_SIZE = Math.ceil(oldStr.length / 8);  //Uint8Arrayのサイズ
+    const n_len = newStr.length;
+    const o_len = oldStr.length;
+    const limit = o_len - 1;
+    let i, j, r, tmp, str;
+    let p, x, y;
+
+    //要素番号を順番に格納してソート用のインデックス配列を作成
+    let oldIdx = [...Array(o_len)].map((_, i) => i);
+    let newIdx = [...Array(n_len)].map((_, i) => i);
+
+    //oldStrとnewStrは変更せずに、インデックス配列の順番をソートする。
+    //例えば、ソート後に oldStr[oldIdx[0]] のような形式で使うとoldStrの中の最小値を参照できる。
+    //ソートすることによって、配列内の目的の場所に最短で連続的にアクセス可能になり、高速化する。
+    //なお、クイックソートは分割幅が狭くなると再帰呼び出しのコストが大きくなるので、途中で切り上げて
+    //挿入ソートで仕上げを行うと若干速くなる。
+    quickSort(oldStr, oldIdx, 0, limit);
+    insSort(oldStr, oldIdx);
+    quickSort(newStr, newIdx, 0, n_len - 1);
+    insSort(newStr, newIdx);
+
+    //i = 0 の場合の処理
+    y = newIdx[0];
+    tmp = newStr[y];
+    matrix[y] = new Uint8Array(BUF_SIZE);  //0で初期化済のバイト型配列を新規作成
+
+    //oldIdx経由でソート済に見えるoldStrを二分探索してtmpの開始位置を取得
+    p = binarySearch(oldStr, oldIdx, tmp, 0, limit);
+
+    for(j = p; j < o_len; j++){
+        x = oldIdx[j];
+        if(oldStr[x] === tmp){  //型変換不要なため、===で比較
+            //ビット論理和代入で対応するビットを1にする
+            //除算やmod演算は遅いのでビット演算で高速化
+            // x >> 3 は x / 8 の切り捨てと同じ、x & 7 は x % 8 と同じ
+            matrix[y][x >> 3] |= 1 << (x & 7);
+        }else{
+            //ソートによってtmpと一致する区間は連続しているので不一致ならすぐにループを抜ける
+            break;
+        }
+    }
+    r = y;      //Uint8Arrayが入った行番号を記録
+    str = tmp;  //r行目の文字を記録
+
+    //i = 1 以降の処理
+    for(i = 1; i < n_len; i++){
+        y = newIdx[i];
+        tmp = newStr[y];
+        if(str === tmp){
+            //登録済みの文字なら既存の配列への参照を代入してメモリの節約と高速化
+            matrix[y] = matrix[r];
+        }else{
+            matrix[y] = new Uint8Array(BUF_SIZE);
+            p = binarySearch(oldStr, oldIdx, tmp, 0, limit);
+
+            for(j = p; j < o_len; j++){
+                x = oldIdx[j];
+                if(oldStr[x] === tmp){
+                    matrix[y][x >> 3] |= 1 << (x & 7);
+                }else{ break; }
+            }
+            r = y;  //新たにUint8Arrayが入った行番号を記録
+            str = tmp;
+        }
+    }
+
+    //ソート済の配列を使って高速に特殊文字を変換
+    escConv(oldStr, oldIdx);
+    escConv(newStr, newIdx);
+}
+
+//matrixの中でビットフラグが斜めに連続する箇所を再帰的に探索する関数
+function txtMix(matrix, oldStr, old_L, old_R, newStr, new_L, new_R, maxSize){
+    //探索開始位置を格納する配列
+    let pos = Array(old_R - old_L + new_R - new_L + 1);
+    const p_len = pos.length;
+    let start, last;            //maxSizeに対応する範囲の座標を格納する変数
+    let data = [];                   //lastとmaxSizeの履歴を記録
+    let i, j, k, cnt;
+    let ii, jj, limit;
+
+/*
+    【探索手順の概要】
+    二次元配列matrixの中で指定された矩形範囲(横方向はold_L～old_R、縦方向はnew_L～new_R)を
+    左上から右下に向かって探索し、matrix内で斜めに1が連続している部分で最も長い箇所を見つける。
+    まず、配列posにmatrixの探索開始位置の座標を格納し、posの各要素に格納された開始座標から右に1、
+    下に1ずつ進みながら矩形範囲の端まで探索する。
+    配列posには、斜めの探索距離が長い位置を最初に、右上や左下の探索距離が短い位置は後回しになる
+    ように格納することで、早い段階で文字列の最長一致箇所を見つけやすくなり、最長一致箇所以下の
+    距離しかないラインに到達したら探索を終了させる。
+    また、探索中に発見した最長の連続一致箇所の長さでスキップしながら探索することで大幅に高速化
+    している。
+
+    (matrix内の探索順序のイメージ)
+      (old_L)
+    (new_L) 0  1  2  3  5  7  9  → (old_R)
+            4 ＼ ＼ ＼ ＼ ＼ ＼ ＼
+            6 ＼ ＼ ＼ ＼ ＼ ＼ ＼
+            8 ＼ ＼ ＼ ＼ ＼ ＼ ＼
+           10 ＼ ＼ ＼ ＼ ＼ ＼ ＼
+            ↓ ＼ ＼ ＼ ＼ ＼ ＼ ＼
+      (new_R)
+*/
+
+    //posの末端から、上記の探索イメージに記載した番号の逆順に開始座標を格納していくことで、
+    //縦長や横長の矩形範囲にも対応した順番になる。
+    i = new_R; j = old_R; k = p_len - 1;
+    while(k){
+        if(i > new_L){
+            pos[k] = [i, old_L];
+            i--; k--;
+        }
+        if(j > old_L){
+            pos[k] = [new_L, j];
+            j--; k--;
+        }
+    }
+    pos[0] = [new_L, old_L];
+    
+    last = [0, 0];
+    for(k = 0; k < p_len; k++){
+        //これから探索する文字の長さがmaxSize以下の場合はループを抜ける
+        i = new_R - pos[k][0] + 1;
+        j = old_R - pos[k][1] + 1;
+        if((i < j ? i: j) <= maxSize){ break; }   //三項演算子でiとjの小さい方を返す
+
+        i = pos[k][0];
+        j = pos[k][1];
+
+        cnt = 0;
+        do{
+            if(matrix[i][j >> 3] & 1 << (j & 7)){
+                cnt++;              //連続一致をカウント
+                if(cnt > maxSize){  //maxSizeを超えたら値を更新
+                    data.push([last[0], last[1], maxSize]);
+                    maxSize = cnt;
+                    last[0] = i;
+                    last[1] = j;
+                }else if(cnt === 1){
+                    //最初にmaxSizeを超える可能性があるかチェック
+                    ii = i + maxSize;
+                    jj = j + maxSize;
+                    if(ii <= new_R && jj <= old_R){
+                        if(matrix[ii][jj >> 3] & 1 << (jj & 7)){
+                            //可能性があるので何もしない                         
+                        }else{
+                            //可能性が無いためmaxSizeの数だけ探索省略
+                            i = ii - 1; j = jj - 1;
+                        }
+                    }else{ break; } //探索範囲をはみ出す場合はループを抜ける
+                }
+            }else{
+                cnt = 0;            //連続一致のカウントをリセット
+                if(maxSize){
+                    //不一致の場合は、maxSize分スキップした場所に一致箇所が無ければ、
+                    //そこまでの区間で連続一致箇所が継続しておらず、maxSizeが更新される
+                    //可能性も無いので、その区間は探索省略して高速化。
+                    ii = i + maxSize;
+                    jj = j + maxSize;
+                    if(ii <= new_R && jj <= old_R){
+                        limit = maxSize;
+                        while(limit){
+                            //limitを超える一致区間が存在する可能性があるかチェック
+                            if(matrix[ii][jj >> 3] & 1 << (jj & 7)){
+                                //可能性があればlimitを半分にして再チェック
+                                limit = limit >> 1;
+                                ii = i + limit;
+                                jj = j + limit;                            
+                            }else{
+                                //可能性が無いためlimitの数だけ探索省略
+                                i = ii; j = jj;
+                                break;
+                            }
+                        }
+                    }else{ break; } //探索範囲をはみ出す場合はループを抜ける
+                }
+            }
+
+            i++; j++;
+        }while(i <= new_R && j <= old_R);
+    }
+    pos = null; //不要になった配列のメモリ解放
+
+    if(maxSize){    //一致する文字がある場合
+        //oldStrのstart[1]からlast[1]まで、newStrのstart[0]からlast[0]までが今回の最長一致箇所。
+        start = [last[0] - maxSize + 1, last[1] - maxSize + 1];
+
+        //最長一致箇所が探索範囲の端まで到達していた場合に再帰を終了するフラグ
+        i = 0; j = 0;
+        if(start[0] == new_L){ i = 1; }     //上端に接していた場合
+        if(start[1] == old_L){ i += 2; }    //左端に接していた場合
+        if(last[0] == new_R){ j = 1; }      //下端に接していた場合
+        if(last[1] == old_R){ j += 2; }     //右端に接していた場合
+
+        //case 3の場合は、""になるので何もしない
+        switch(i){
+            case 0: //dataの探索履歴から次の探索範囲内でのmaxSizeの初期値を取得
+                    k = secondSize(data, old_L, start[1] - 1, new_L, start[0] - 1);
+                    //最長一致箇所の左上の矩形範囲を対象に再帰呼び出し
+                    txtMix(matrix, oldStr, old_L, start[1] - 1, newStr, new_L, start[0] - 1, k);
+                    break;
+            //上端に接していた場合は、余ったoldStrを削除記号《--》で囲む
+            case 1: oldStr[old_L] = "《-" + oldStr[old_L];
+                    oldStr[start[1] - 1] += "-》《==》";
+                    break;
+            //左端に接していた場合は、余ったnewStrを挿入記号《==》で囲む
+            case 2: oldStr[old_L] = "《--》《=" + newStr.slice(new_L, start[0]).join("") + "=》" + oldStr[old_L];
+        }
+        switch(j){
+            case 0: //dataの探索履歴から次の探索範囲内でのmaxSizeの初期値を取得
+                    k = secondSize(data, last[1] + 1, old_R, last[0] + 1, new_R);
+                    //最長一致箇所の右下の矩形範囲を対象に再帰呼び出し
+                    txtMix(matrix, oldStr, last[1] + 1, old_R, newStr, last[0] + 1, new_R, k);
+                    break;
+            //下端に接していた場合は、余ったoldStrを削除記号《--》で囲む
+            case 1: oldStr[last[1]] += "《-";
+                    oldStr[old_R] += "-》《==》";
+                    break;
+            //右端に接していた場合は、余ったnewStrを挿入記号《==》で囲む
+            case 2: oldStr[old_R] += "《--》《=" + newStr.slice(last[0] + 1, new_R + 1).join("") + "=》";
+        }
+
+    }else{  //一致する文字が無い場合
+        oldStr[old_L] = "《-" + oldStr[old_L];
+        oldStr[old_R] += "-》《=" + newStr.slice(new_L, new_R + 1).join("") + "=》";
+    }
+}
+
+function secondSize(data, old_L, old_R, new_L, new_R){
+    let size = 0;
+    let tmp;
+
+    for(let i = 0; i < data.length; i++){
+        tmp = data[i];
+        if(tmp[0] <= new_R && tmp[1] <= old_R){
+            if((tmp[0]-tmp[2]+1) >= new_L && (tmp[1]-tmp[2]+1) >= old_L){
+                if(tmp[2] > size){ size = tmp[2]; }
+            }
+        }
+    }
+    return size ? size - 1 : 0;
+}
+
+//テキストデータをhtmlに変換して出力する関数
+function htmlConv(str){
+    //正規表現でspanタグ挿入
+    str = str.replace(/《-(.*?)-》/g, "<span class=\'del_txt\'>$1</span>");
+    str = str.replace(/《=(.*?)=》/g, "<span class=\'ins_txt\'>$1</span>");
+
+    const changes = document.getElementById('changes');
+    changes.textContent = "";      //変更箇所リストのクリア
+    document.getElementById('output').innerHTML = str;
+    str = "";
+
+    const dellist = document.getElementsByClassName('del_txt');
+    //削除箇所のspanと挿入箇所のspanは同数作っている。(削除だけ、挿入だけの場合はもう一方のspanを空で生成)
+    //削除分のspanの数を変更箇所数とする。(削除のみ：1,挿入のみ：1,置換(削除・挿入のセット)：1,でカウント)
+    const listCount = dellist.length;
+
+    document.getElementById('count').textContent = listCount; //変更箇所数の出力
+
+    if(listCount){  //変更箇所が1以上存在した場合
+        const inslist = document.getElementsByClassName('ins_txt');
+        const dTexts = [...dellist].map(elem => elem.textContent);
+        const iTexts = [...inslist].map(elem => elem.textContent);
+        let i, dStr, iStr;
+        let tag = "";
+        let subCount = [0, 0, 0];
+
+        for(i = 0; i < listCount; i++){
+            dStr = dTexts[i];
+            iStr = iTexts[i];
+
+            //変更箇所リストのtableを行単位で作成
+            if(iStr == ""){         //挿入が空白=>削除のみの場合
+                tag += "<tr><td>" + String(i + 1) + "</td><td onclick='spanSelect(this)'>" + dStr
+                     + "</td><td class='no-hover'></td><td><input type='checkbox' class='agree' onchange='switching(this)' checked></td></tr>\n";
+                subCount[0] += 1;
+
+            }else if(dStr == ""){   //削除が空白=>挿入のみの場合
+                tag += "<tr><td>" + String(i + 1) + "</td><td class='no-hover'></td><td onclick='spanSelect(this)'>"
+                     + iStr + "</td><td><input type='checkbox' class='agree' onchange='switching(this)' checked></td></tr>\n";
+                subCount[1] += 1;
+
+            }else{                  //置換の場合
+                tag += "<tr><td>" + String(i + 1) + "</td><td onclick='spanSelect(this)'>" + dStr
+                     + "</td><td onclick='spanSelect(this)'>" + iStr
+                     + "</td><td><input type='checkbox' class='agree' onchange='switching(this)' checked></td></tr>\n";
+                subCount[2] += 1;
+            }
+        }
+
+        //箇所数の内訳出力
+        document.getElementById('c1').textContent = String(subCount[0]);  //削除
+        document.getElementById('c2').textContent = String(subCount[1]);  //挿入
+        document.getElementById('c3').textContent = String(subCount[2]);  //置換
+
+        changes.innerHTML = tag; //変更箇所のリストを出力
+    }else{
+        //箇所数の内訳リセット
+        document.getElementById('c1').textContent = "0";  //削除
+        document.getElementById('c2').textContent = "0";  //挿入
+        document.getElementById('c3').textContent = "0";  //置換
+    }
+}
+
+</script>
+</head>
+
+<body>
+<header>
+    <h1 align="center">テキストデータ比較ツール</h1>
+</header>
+<main>
+<section id="inputarea">
+    <table id="inputTable">
+    <tr>
+        <th>変更前</th>
+        <th>変更後</th>
+    </tr>
+    <tr>
+        <td>
+            <textarea id="text1" name="before" rows="20" cols="90" wrap="soft" oninput="txtlen(this)"
+                placeholder="ここに変更前のテキストデータを入力してください。"></textarea>
+        </td>
+        <td>
+            <textarea id="text2" name="After" rows="20" cols="90" wrap="soft" oninput="txtlen(this)"
+                placeholder="ここに変更後のテキストデータを入力してください。"></textarea>
+        </td>
+    </tr>
+    <tr>
+        <td>文字数：<span id="before">0</span>文字</td>
+        <td>文字数：<span id="After">0</span>文字</td>
+    </tr>
+    <tr>
+        <td colspan="2">
+            <hr>
+            <table>
+                <tr>
+                    <td>
+                        <button type="button" onclick="txtCheck()">テキスト比較</button><br>
+                    </td>
+                    <td>
+                        <details>
+                        <summary>変更箇所計：<span id="count">0</span>箇所</summary>
+                        <ul>
+                            <li>削除：<span id="c1">0</span>箇所</li>
+                            <li>挿入：<span id="c2">0</span>箇所</li>
+                            <li>置換：<span id="c3">0</span>箇所</li>
+                        </ul>
+                        </details>
+                    </td>
+                    <td>
+                        <details>
+                        <summary>実行時間：<span id="time">0</span>ms</summary>
+                        <ol>
+                            <li>テキスト読込：<span id="t1">0</span>ms</li>
+                            <li>ビットフラグ生成：<span id="t2">0</span>ms</li>
+                            <li>探索・文字列結合：<span id="t3">0</span>ms</li>
+                            <li>HTML出力：<span id="t4">0</span>ms</li>
+                        </ol>
+                        </details>
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+    </table>
+
+</section>
+<br>
+<section id="config">
+<details open>
+    <summary>使い方</summary>
+    <ol>
+        <li>上段の<strong>入力欄に変更前、変更後のテキストを入力</strong>してください。入力欄の右下をドラッグするとサイズを自由に調整できます。</li>
+        <li><strong>「テキスト比較」ボタンをクリック</strong>すると、変更前後のテキストを比較し削除文字列と挿入文字列を特定してデータを統合し、<strong>変更箇所を明示したテキストが下段の「結果表示」欄に表示</strong>されます。また、「テキスト比較」ボタンの右側の「変更箇所計」と「実行時間」が更新され、それぞれクリックすると更に内訳が表示されます。</li>
+        <li>「結果表示」欄の変更箇所の色や取消線等の書式は、下の「書式設定」をクリックして開くと各種設定を変更して表示させることができます。</li>
+        <li>下段右側は「削除」や「挿入」された文字列が表形式で出力されます。表の中の<strong>削除文字列や挿入文字列が入ったセルをクリックすると、「結果表示」欄がスクロールして該当箇所が選択</strong>された状態になります。なお、<strong>「採用」欄のチェックを外すと、該当箇所の変更内容を適用しない状態(変更前のテキスト)</strong>になります。</li>
+        <li>「結果表示」欄の内容を<strong>コピーしてWord等に貼り付けると、表示されている書式も一緒にコピー可能</strong>です。(※Wordの場合、「元の書式を保持」で貼り付け。)</li>
+        <li>このページはhtmlファイル1個だけで完結しているので、簡単にコピーしてローカル環境でも使うことができます。また、プログラムの動作にサーバーとの通信も不要なため、ローカル環境で機密性の高い情報を安全に扱うこともできます。</li>
+    </ol>
+</details>
+<hr>
+<details>
+<summary>書式設定</summary>
+    <table id="styleChange">
+    <tr>
+        <td>削除文字列の設定</td>
+        <td>
+            <label><input type="radio" name="delFontColor" onchange="spanConfig(this)" checked>
+            <label>文字色<input type="color" class="set" onchange="spanConfig(this)" value="#ff0000"></label>
+            </label>
+            <label><input type="radio" name="delFontColor" class="reset" onchange="spanConfig(this)">黒</label>
+        </td>
+        <td>
+            <label><input type="radio" name="delBackColor" onchange="spanConfig(this)" checked>
+            <label>背景色<input type="color" class="set" onchange="spanConfig(this)" value="#fef263"></label>
+            </label>
+            <label><input type="radio" name="delBackColor" class="reset" onchange="spanConfig(this)">無色</label>
+        </td>
+        <td><label><input type="checkbox" name="bold" onchange="spanConfig(this)" checked>太字</label></td>
+        <td><label><input type="checkbox" name="erase" onchange="spanConfig(this)" checked>取消線</label></td>
+        <td><label><input type="checkbox" name="under" onchange="spanConfig(this)">下線</label></td>
+        <td><label><input type="checkbox" name="visible" class="visible" onchange="spanConfig(this)" checked>表示</label></td>
+    </tr>
+    <tr>
+        <td>挿入文字列の設定</td>
+        <td>
+            <label><input type="radio" name="insFontColor" onchange="spanConfig(this)" checked>
+            <label>文字色<input type="color" class="set" onchange="spanConfig(this)" value="#0000ff"></label>
+            </label>
+            <label><input type="radio" name="insFontColor" class="reset" onchange="spanConfig(this)">黒</label>
+        </td>
+        <td>
+            <label><input type="radio" name="insBackColor" onchange="spanConfig(this)" checked>
+            <label>背景色<input type="color" class="set" onchange="spanConfig(this)" value="#7fffd4"></label>
+            </label>
+            <label><input type="radio" name="insBackColor" class="reset" onchange="spanConfig(this)">無色</label>
+        </td>
+        <td><label><input type="checkbox" name="bold" onchange="spanConfig(this)" checked>太字</label></td>
+        <td><label><input type="checkbox" name="erase" onchange="spanConfig(this)">取消線</label></td>
+        <td><label><input type="checkbox" name="under" onchange="spanConfig(this)" checked>下線</label></td>
+        <td><label><input type="checkbox" name="visible" class="visible" onchange="spanConfig(this)" checked>表示</label></td>
+    </tr>
+    </table>
+</details>
+</section>
+<br>
+<section id="outputarea">
+    <div id="allCheckBox"><label>(<input type="checkbox" id="all" onchange="checkAll()" checked>一括チェック)</label></div>
+    <div class="flex-container">
+        <div class="scrolltable1">
+        <table height="100%" width="100%" border="1">
+            <thead>
+                <tr><th>結果表示</th></tr>
+            </thead>
+            <tbody>
+                <tr valign="top"><td id="output">ここに変更箇所を明示したテキストが表示されます。</td></tr>
+            </tbody>
+        </table>
+        </div>
+        <div class="scrolltable2">
+        <table width="100%" border="1" id="list">
+            <thead>
+                <tr><th>No.</th><th>削除</th><th>挿入</th><th>採用</th></tr>
+            </thead>
+            <tbody id="changes">
+            </tbody>
+        </table>
+        </div>
+    </div>
+</section>
+</main>
+</body>
+</html>
