@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>WebGPU Monte Carlo π</title>
+  <style>
+    body { font-family: sans-serif; }
+    canvas { border: 1px solid black; }
+  </style>
+</head>
+<body>
+
+<h2>Monte Carlo π (WebGPU)</h2>
+<canvas id="c" width="500" height="500"></canvas>
+<p id="pi">π ≈ ...</p>
+
+<script type="module">
+const canvas = document.getElementById("c");
+const context = canvas.getContext("webgpu");
+
+if (!navigator.gpu) {
+  alert("WebGPU not supported");
+}
+
+const adapter = await navigator.gpu.requestAdapter();
+const device = await adapter.requestDevice();
+
+const format = navigator.gpu.getPreferredCanvasFormat();
+context.configure({
+  device,
+  format,
+});
+
+const numPoints = 200000;
+const pointSize = 4;
+
+// GPUバッファ（点データ）
+const pointBuffer = device.createBuffer({
+  size: numPoints * 4 * 4, // vec4(x,y,flag,unused)
+  usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX,
+});
+
+// カウント用
+const countBuffer = device.createBuffer({
+  size: 4,
+  usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+});
+device.queue.writeBuffer(countBuffer, 0, new Uint32Array([0]));
+
+// ===== Compute Shader（点生成） =====
+const computeShader = `
+struct Point {
+  pos : vec2<f32>,
+  inside : f32,
+};
+
+@group(0) @binding(0)
+var<storage, read_write> points : array<Point>;
+
+@group(0) @binding(1)
+var<storage, read_write> count : atomic<u32>;
+
+fn rand(seed: u32) -> f32 {
+  var x = seed;
+  x ^= x << 13;
+  x ^= x >> 17;
+  x ^= x << 5;
+  return f32(x % 10000u) / 10000.0;
+}
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) id : vec3<u32>) {
+  let i = id.x;
+
+  let x = rand(i*2u) * 2.0 - 1.0;
+  let y = rand(i*2u+1u) * 2.0 - 1.0;
+
+  let d = x*x + y*y;
+  let inside = select(0.0, 1.0, d <= 1.0);
+
+  points[i].pos = vec2<f32>(x, y);
+  points[i].inside = inside;
+
+  if (inside == 1.0) {
+    atomicAdd(&count, 1u);
+  }
+}
+`;
+
+// ===== Render Shader（描画） =====
+const renderShader = `
+struct Point {
+  pos : vec2<f32>,
+  inside : f32,
+};
+
+@group(0) @binding(0)
+var<storage, read> points : array<Point>;
+
+struct VSOut {
+  @builtin(position) pos : vec4<f32>,
+  @location(0) inside : f32,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) i : u32) -> VSOut {
+  var out : VSOut;
+  let p = points[i];
+
+  out.pos = vec4<f32>(p.pos, 0.0, 1.0);
+  out.inside = p.inside;
+  return out;
+}
+
+@fragment
+fn fs_main(in : VSOut) -> @location(0) vec4<f32> {
+  if (in.inside == 1.0) {
+    return vec4<f32>(0.2, 0.8, 0.2, 1.0); // 緑
+  }
+  return vec4<f32>(0.9, 0.2, 0.2, 1.0); // 赤
+}
+`;
+
+// パイプライン作成
+const computePipeline = device.createComputePipeline({
+  layout: "auto",
+  compute: {
+    module: device.createShaderModule({ code: computeShader }),
+    entryPoint: "main",
+  },
+});
+
+const renderPipeline = device.createRenderPipeline({
+  layout: "auto",
+  vertex: {
+    module: device.createShaderModule({ code: renderShader }),
+    entryPoint: "vs_main",
+  },
+  fragment: {
+    module: device.createShaderModule({ code: renderShader }),
+    entryPoint: "fs_main",
+    targets: [{ format }],
+  },
+  primitive: {
+    topology: "point-list",
+  },
+});
+
+// バインド
+const bindGroup = device.createBindGroup({
+  layout: computePipeline.getBindGroupLayout(0),
+  entries: [
+    { binding: 0, resource: { buffer: pointBuffer } },
+    { binding: 1, resource: { buffer: countBuffer } },
+  ],
+});
+
+// 実行
+const encoder = device.createCommandEncoder();
+
+// Compute
+const computePass = encoder.beginComputePass();
+computePass.setPipeline(computePipeline);
+computePass.setBindGroup(0, bindGroup);
+computePass.dispatchWorkgroups(Math.ceil(numPoints / 64));
+computePass.end();
+
+// Render
+const textureView = context.getCurrentTexture().createView();
+const renderPass = encoder.beginRenderPass({
+  colorAttachments: [{
+    view: textureView,
+    loadOp: "clear",
+    storeOp: "store",
+  }],
+});
+
+renderPass.setPipeline(renderPipeline);
+renderPass.setBindGroup(0, bindGroup);
+renderPass.draw(numPoints);
+renderPass.end();
+
+device.queue.submit([encoder.finish()]);
+
+// 結果取得
+const readBuffer = device.createBuffer({
+  size: 4,
+  usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+});
+
+const encoder2 = device.createCommandEncoder();
+encoder2.copyBufferToBuffer(countBuffer, 0, readBuffer, 0, 4);
+device.queue.submit([encoder2.finish()]);
+
+await readBuffer.mapAsync(GPUMapMode.READ);
+const inside = new Uint32Array(readBuffer.getMappedRange())[0];
+
+const pi = 4 * inside / numPoints;
+document.getElementById("pi").textContent = "π ≈ " + pi;
+</script>
+
+</body>
+</html>
