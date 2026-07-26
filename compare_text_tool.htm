@@ -201,7 +201,9 @@ function sampleLoad(){
         })
         .then(text => {
             //変更前の欄に表示
-            document.getElementById('text1').value = text;
+            const elem = document.getElementById('text1');
+            elem.value = text;
+            txtlen(elem);
         })
         .catch(error => {
             alert('エラー: ' + error.message);
@@ -217,7 +219,9 @@ function sampleLoad(){
         })
         .then(text => {
             //変更後の欄に表示
-            document.getElementById('text2').value = text;
+            const elem = document.getElementById('text2');
+            elem.value = text;
+            txtlen(elem);
         })
         .catch(error => {
             alert('エラー: ' + error.message);
