@@ -90,6 +90,12 @@
         }
     }
 
+    #buttons{
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+    }
+
     #config{
         padding: 10px 20px;
         border-radius: 15px;
@@ -184,6 +190,40 @@
 </style>
 
 <script type="text/javascript">
+//テスト用データの読込
+function sampleLoad(){
+    fetch('./cat_story(kanji).txt')
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('cat_story(kanji).txt の読込失敗');
+            }
+            return response.text();
+        })
+        .then(text => {
+            //変更前の欄に表示
+            document.getElementById('text1').value = text;
+        })
+        .catch(error => {
+            alert('エラー: ' + error.message);
+            console.error(error);
+        });
+    
+        fetch('./cat_story(furigana).txt')
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('cat_story(furigana).txt の読込失敗');
+            }
+            return response.text();
+        })
+        .then(text => {
+            //変更後の欄に表示
+            document.getElementById('text2').value = text;
+        })
+        .catch(error => {
+            alert('エラー: ' + error.message);
+            console.error(error);
+        });
+}
 
 //採用チェックボックスの一括処理
 function checkAll(){
@@ -827,6 +867,7 @@ function htmlConv(str){
     <tr>
         <td colspan="2">
             <hr>
+            <div id="buttons">
             <table>
                 <tr>
                     <td>
@@ -855,6 +896,8 @@ function htmlConv(str){
                     </td>
                 </tr>
             </table>
+            <button type="button" onclick="sampleLoad()">テスト用データ読込</button>
+            </div>
         </td>
     </tr>
     </table>
